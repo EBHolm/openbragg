@@ -9,6 +9,19 @@ authors = [{ name = "Emil Brinch Holm" }]
 dependencies = [
     "numpy",
     "matplotlib",
+    "typer",
+]
+
+[project.scripts]
+openbragg = "openbragg.cli:app"
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "black",
+    "isort",
+    "pyright",
+    "pre-commit",
 ]
 
 [build-system]
@@ -17,3 +30,16 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/openbragg"]
+
+[tool.pyright]
+typeCheckingMode = "strict"
+include = ["src", "tests"]
+
+[tool.black]
+target-version = ["py312"]
+
+[tool.isort]
+profile = "black"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
