@@ -41,4 +41,21 @@ def test_recompute_cli(synthetic_case: SyntheticCase) -> None:
         ],
     )
     assert result.exit_code == 0, result.output
+    assert "recomputed dose:" in result.output
     assert "max abs diff vs plan-dose" in result.output
+
+
+def test_recompute_cli_rejects_non_integer_grid(synthetic_case: SyntheticCase) -> None:
+    sc = synthetic_case
+    result = runner.invoke(
+        app,
+        [
+            "recompute",
+            str(sc.patient_dir),
+            "--fluence",
+            str(sc.fluence_path),
+            "--grid",
+            "1,2,x",
+        ],
+    )
+    assert result.exit_code != 0

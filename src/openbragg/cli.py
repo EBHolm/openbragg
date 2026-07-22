@@ -58,7 +58,10 @@ def recompute(
     ),
 ) -> None:
     """Recompute dose = Dij·w for an openkbp-opt case and report agreement."""
-    parts = tuple(int(x) for x in grid.split(","))
+    try:
+        parts = tuple(int(x) for x in grid.split(","))
+    except ValueError as exc:
+        raise typer.BadParameter("grid must be 'nx,ny,nz' (three integers)") from exc
     if len(parts) != 3:
         raise typer.BadParameter("grid must be 'nx,ny,nz'")
     grid_shape = (parts[0], parts[1], parts[2])
