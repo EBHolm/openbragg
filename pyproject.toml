@@ -8,8 +8,11 @@ license = "Apache-2.0"
 authors = [{ name = "Emil Brinch Holm" }]
 dependencies = [
     "numpy",
+    "scipy",
+    "pandas",
     "matplotlib",
     "typer",
+    "pydicom>=3.0.2",
 ]
 
 [project.scripts]
