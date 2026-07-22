@@ -86,3 +86,8 @@ cases/
 influence/
 engine_runs/
 scratch/
+
+# --- Curated, committable openkbp-opt sample (small subset; see sample_data/openkbp_opt/README.md) ---
+# The bulk dataset stays ignored (data/, *.npz above); the tracked sample is re-included,
+# including its dij.npz which the global *.npz rule would otherwise exclude.
+!sample_data/**/*.npz
