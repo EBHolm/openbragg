@@ -76,7 +76,7 @@ The scope target is **(C): a clinical-*grade* engine**. OpenBragg aims for clini
 - **Relationship to prior art:** clean-room new build (option B). OpenTPS, MCsquare, and OpenTOPAS are used as **reference and validation oracles only** — no code copying. The **GPLv3 OpenTPS GUI is off-limits** even for reference, to keep OpenBragg permissive.
 
 ### Architecture & stack
-- **Python-first core.** Data model, DICOM-RT I/O (`pydicom`), image handling (`SimpleITK`/`numpy`), workflow orchestration, DVH/evaluation, optimization glue (`scipy`/`numpy`, later `cvxpy`/`jax`), and visualization (matplotlib/notebook in Phase 1).
+- **Python-first core.** Data model, DICOM-RT I/O (`pydicom`), image handling (`SimpleITK`/`numpy`), workflow orchestration, DVH/evaluation, optimization glue (`scipy`/`numpy`, later `cvxpy`/`jax`), and visualization — static figures via matplotlib/notebook (the `viz` submodule) plus an optional interactive 3D GUI via napari (the `gui` submodule, behind an `openbragg[gui]` extra) — in Phase 1.
 - **Narrow, language-agnostic dose-engine seam.** External engines are invoked across a **process boundary (subprocess/CLI)**, never linked. This dodges license coupling and enforces the seam. Any future in-house C++/CUDA engine sits behind the *same* interface (via a process boundary or a thin `pybind11` layer).
 - **Dij-first data model.** The dose engine's fundamental output is a **sparse voxels×spots dose-influence matrix (Dij)**. "Total dose for a plan" is `Dij · w`. Phase 1 uses this only to reproduce a delivered plan's dose (`w` = delivered weights); Phase-2 optimization consumes the identical object. A **sparse influence-matrix representation** and its storage location (in-memory vs on-disk for large cases) are designed in Phase 1, not deferred.
 
@@ -92,7 +92,7 @@ Data & I/O: (1) DICOM-RT I/O; (2) patient/plan data model. Pre-planning: (3) ima
 ### License & naming
 - **Apache-2.0** (permissive + patent grant; adoption-friendly for target C).
 - **OpenBragg** / `openbragg` — chosen as a deliberate, honest sibling to OpenTPS and OpenTOPAS.
-- **Repo topology (recommended):** single monorepo package for now, with a `viz` submodule that is matplotlib/notebook-only in Phase 1. Split into `openbragg-core` / `openbragg-gui` only if a real GUI later justifies it — and if split, keep the GUI Apache-2.0, not GPL.
+- **Repo topology (recommended):** single monorepo package for now, with a `viz` submodule (static matplotlib/notebook figures) and a `gui` submodule (interactive napari viewer) in Phase 1. The GUI's Qt/napari dependency lives behind an optional `openbragg[gui]` extra pinned to **PySide6 (LGPL)** — never `napari[all]`, which pulls PyQt5 (GPL) — so the core stays Qt-free and Apache-2.0-clean. Split into physical `openbragg-core` / `openbragg-gui` distributions only if packaging later justifies it; if split, keep the GUI Apache-2.0, not GPL. See ADR-0001.
 - **Repo home (recommended, undecided):** a new GitHub org `openbragg` rather than a personal repo, to support contributors and DCPT collaboration later.
 
 ## Testing Decisions
@@ -113,7 +113,7 @@ Data & I/O: (1) DICOM-RT I/O; (2) patient/plan data model. Pre-planning: (3) ima
 - **Phase 1 excludes:** plan optimization (modules 10/11), any in-house dose engine (Phase 2), auto-segmentation/contouring, and machine commissioning (Phase 1 borrows an existing/generic beam model).
 - **DCPT/RayStation data and validation** — deferred; not available in the near term. Near-term validation is open-data/open-software only.
 - **Photon/electron and brachytherapy modalities** — architecture must not preclude them, but they are not built now.
-- **Heavy GUI** — Phase 1 visualization is matplotlib/notebook only.
+- **Heavy custom-Qt GUI** — an interactive 3D viewer *is* in Phase 1 (napari, the `gui` submodule; see ADR-0001), but a hand-built Qt application or a full clinical multi-pane MPR is deferred.
 - **Repo creation** — intentionally not done yet; this PRD precedes it.
 
 ## Further Notes
@@ -134,12 +134,18 @@ open-data story for photons is decisively better: openkbp-opt ships a precompute
 around), whereas no verified fully-open proton RTION-plan + reference-dose dataset was
 found.
 
-The photon-first milestone is **recompute-only** (no optimizer): consume the precomputed
-`Dij`, compute `Dij·w` from the shipped beamlet weights (`plan-fluence`), and verify it
-reproduces `plan-dose` via gamma + DVH. This exercises the whole Dij-consumer half of the
-pipeline on real data now, but — because the `Dij` is precomputed — it does **not** validate
-dose physics or the engine seam's produce-a-`Dij` path. Proton-specific modules (HU→RSP,
-MCsquare wrapping, Bortfeld/PSTAR analytics) are deferred to the proton phase.
+The photon-first milestone is **recompute + verification** (no optimizer). Its first slice
+is recompute-only: consume the precomputed `Dij`, compute `Dij·w` from the shipped beamlet
+weights (`plan-fluence`), and verify it reproduces `plan-dose`. It then extends across the
+whole openkbp-runnable Dij-consumer half of the pipeline — DVH computation, dose statistics /
+clinical-goal checks, the gamma + DVH regression harness, and visualization (dose-on-CT +
+DVH plot) — all driven by the arrays openkbp-opt ships (CT, structure masks, doses). The
+scoping rule for this phase: **anything runnable on openkbp-opt data is in scope; anything
+requiring DICOM I/O or proton physics is not.** Because the `Dij` is precomputed, none of
+this validates dose physics or the engine seam's produce-a-`Dij` path. Proton-specific and
+DICOM modules — DICOM-RT ingest, RTSTRUCT ingest, RTDOSE export, HU→RSP, MCsquare wrapping,
+Bortfeld/PSTAR analytics — are deferred to the proton phase; the DVH/stats/gamma/viz *logic*
+is modality-agnostic and later just gets fed DICOM inputs.
 
 Canonical design: `docs/superpowers/specs/2026-07-22-photon-first-pivot-design.md`.
 Issues are split by `phase:photon` / `phase:proton`; the proton issues (#4–#13) are
