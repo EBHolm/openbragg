@@ -122,3 +122,25 @@ Data & I/O: (1) DICOM-RT I/O; (2) patient/plan data model. Pre-planning: (3) ima
 - **Ecosystem honesty:** the README should openly acknowledge overlap with OpenTPS and state that the justification for a new build is learning + architectural control (engine-agnostic seam, Dij-first, provenance-first), not raw feature utility.
 - **Author background:** cosmology PhD → medical physics. Numpy/scipy/HPC/sparse-linear-algebra fluency is an asset; the Dij-first sparse-matrix plumbing and large-array memory management play directly to that strength.
 - **Sequencing principle:** get a correct end-to-end pipeline running on wrapped engines *first* (to learn what each module must do), *then* reimplement modules behind their now-understood interfaces. Building the dose engine first, in a vacuum, is the failure mode to avoid.
+
+## Addendum (2026-07-22): Photon-first sequencing of Phase 1
+
+Phase 1's dose-recalculation / verification pipeline is being brought up on **photon**
+data first, anchored on the open **openkbp-opt** dataset, with **proton remaining the
+project's true-north**. This cashes in the modality-agnostic architecture (see
+"Implementation Decisions → Modality") earlier than originally sequenced, because the
+open-data story for photons is decisively better: openkbp-opt ships a precomputed
+`Dij` + reference/plan doses (`dose = Dij·w`, the identical object OpenBragg is built
+around), whereas no verified fully-open proton RTION-plan + reference-dose dataset was
+found.
+
+The photon-first milestone is **recompute-only** (no optimizer): consume the precomputed
+`Dij`, compute `Dij·w` from the shipped beamlet weights (`plan-fluence`), and verify it
+reproduces `plan-dose` via gamma + DVH. This exercises the whole Dij-consumer half of the
+pipeline on real data now, but — because the `Dij` is precomputed — it does **not** validate
+dose physics or the engine seam's produce-a-`Dij` path. Proton-specific modules (HU→RSP,
+MCsquare wrapping, Bortfeld/PSTAR analytics) are deferred to the proton phase.
+
+Canonical design: `docs/superpowers/specs/2026-07-22-photon-first-pivot-design.md`.
+Issues are split by `phase:photon` / `phase:proton`; the proton issues (#4–#13) are
+preserved unchanged.
