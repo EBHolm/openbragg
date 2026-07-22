@@ -9,6 +9,7 @@ the plan-fluence CSV. All raveled indices are C-order over the grid shape.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -62,6 +63,73 @@ def _read_mask(path: Path, grid_shape: GridShape) -> npt.NDArray[np.bool_]:
 def _read_voxel_dims(path: Path) -> tuple[float, float, float]:
     v = np.asarray(np.loadtxt(path), dtype=np.float64).ravel()
     return (float(v[0]), float(v[1]), float(v[2]))
+
+
+@dataclass(frozen=True)
+class DatasetReport:
+    """Summary of what an ``open-kbp-opt-data`` tree contains, for tooling."""
+
+    root: Path
+    patient_ids: tuple[str, ...]
+    has_plan_fluence: bool
+
+    @property
+    def recompute_ready(self) -> bool:
+        """True when both the base (patients) and optional (fluence) bundles are present."""
+        return bool(self.patient_ids) and self.has_plan_fluence
+
+
+def verify_dataset(root: str | Path) -> DatasetReport:
+    """Inspect an ``open-kbp-opt-data`` tree and report what is present.
+
+    Checks for ``reference-plans/pt_*`` patients (base bundle) and any
+    ``paper-plans/*/plan-fluence`` directory (optional bundle — the source of
+    the beamlet weight vector ``w``).
+    """
+    root = Path(root)
+    patient_ids = tuple(d.name for d in find_patient_dirs(root))
+    has_plan_fluence = (
+        next((root / "paper-plans").glob("*/plan-fluence"), None) is not None
+    )
+    return DatasetReport(root, patient_ids, has_plan_fluence)
+
+
+def find_patient_dirs(root: str | Path) -> list[Path]:
+    """Return the sorted ``reference-plans/pt_*`` patient directories under *root*.
+
+    *root* is an ``open-kbp-opt-data`` tree (see the dataset README). Used by the
+    fetch/curation tooling to enumerate patients without hard-coding IDs.
+    """
+    reference_plans = Path(root) / "reference-plans"
+    return sorted(p for p in reference_plans.glob("pt_*") if p.is_dir())
+
+
+def resolve_plan_paths(
+    root: str | Path, patient_id: str, model: str | None = None
+) -> tuple[Path, Path]:
+    """Locate the ``(plan-fluence, plan-dose)`` CSVs for *patient_id* under *root*.
+
+    Globs ``paper-plans/<model>/plan-fluence/**/<patient_id>.csv`` — the ``**``
+    tolerates both the flat README layout (``plan-fluence/pt_*.csv``) and any
+    prediction-set nesting — then derives the matching ``plan-dose`` path by
+    swapping the ``plan-fluence`` path component. When *model* is ``None`` any
+    model matches; the first path in sorted order is chosen for determinism.
+
+    Raises ``FileNotFoundError`` if no ``plan-fluence`` CSV exists for the
+    patient. The returned ``plan-dose`` path is not guaranteed to exist — callers
+    that need the reference dose should check.
+    """
+    paper_plans = Path(root) / "paper-plans"
+    pattern = f"{model or '*'}/plan-fluence/**/{patient_id}.csv"
+    matches = sorted(paper_plans.glob(pattern))
+    if not matches:
+        raise FileNotFoundError(
+            f"no plan-fluence CSV for {patient_id!r} under {paper_plans}"
+        )
+    fluence = matches[0]
+    parts = list(fluence.parts)
+    parts[parts.index("plan-fluence")] = "plan-dose"
+    return fluence, Path(*parts)
 
 
 def load_dij(
