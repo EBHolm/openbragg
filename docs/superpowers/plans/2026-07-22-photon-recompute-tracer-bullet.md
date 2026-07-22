@@ -677,12 +677,15 @@ git commit -m "feat(io): add openkbp-opt loader into the Case data model"
 # tests/openbragg/engine/test_openkbp_opt_engine.py
 """Behavioral tests for the dose-engine seam and the openkbp-opt loader engine."""
 
+from dataclasses import replace
+
 import numpy as np
 import pytest
 
 from openbragg.engine.base import DijResult, DoseEngine
 from openbragg.engine.openkbp_opt import OpenKBPOptEngine
 from openbragg.io.openkbp_opt import load_case
+from openbragg.model.case import Plan
 
 
 def test_engine_sources_dij_matching_case(synthetic_case) -> None:
@@ -708,10 +711,6 @@ def test_engine_rejects_weight_count_mismatch(make_synthetic_case) -> None:
     # Build a case whose plan has the wrong number of weights.
     case = load_case(sc.patient_dir, sc.fluence_path, sc.dose_path, grid_shape=sc.grid_shape)
     bad = OpenKBPOptEngine(sc.patient_dir, grid_shape=sc.grid_shape)
-    from dataclasses import replace
-
-    from openbragg.model.case import Plan
-
     mangled = replace(case, plan=Plan(np.array([1.0, 2.0])))  # 2 != 3 beamlets
     with pytest.raises(ValueError):
         bad.compute_dij(mangled)
