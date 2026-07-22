@@ -19,7 +19,7 @@ from openbragg.model.case import Case, GridShape
 # pyright: reportUnknownMemberType=false, reportUnknownVariableType=false, reportUnknownArgumentType=false, reportMissingTypeStubs=false, reportOptionalSubscript=false
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class DijResult:
     """The output of the dose-engine seam.
 
