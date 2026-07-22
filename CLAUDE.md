@@ -86,6 +86,14 @@ When debugging, always investigate the actual root cause before implementing a f
 
 After a **large body of work** (feature, refactor, multi-file bugfix), run `/code-review` — it reviews the branch against this repo's standards and against the originating issue/PRD. Trigger at a work-phase boundary, not per-commit.
 
+## PR Demo Notebooks
+
+Every PR that adds user-facing functionality ships a demo notebook under `notebooks/`, named `pr<NUM>_<slug>.ipynb` (e.g. `pr17_photon_recompute_demo.ipynb`). It should:
+
+- **Be self-contained and runnable without clinical data** — synthesize any input in the notebook (in the real on-disk format), since datasets are git-ignored. Note where the same API points at real data.
+- **Exercise the actual package API** end-to-end (import from `openbragg.*`, not copied logic), and state honest limits (plumbing vs. physics validation).
+- **Ship with outputs embedded** — execute before committing: `uv run jupyter nbconvert --to notebook --execute --inplace notebooks/pr<NUM>_<slug>.ipynb`. `ipykernel`/`nbconvert` are dev deps.
+
 ## Signal a Good Time to Compact
 
 When context usage is ~30% or more and you reach a good checkpoint (a work-phase boundary, or a big fan-out just returned), flag that it's a good moment to compact and suggest a one-line focus for what to carry forward. Commit or note state first so the checkpoint is clean.
