@@ -20,7 +20,7 @@ from scipy import sparse
 # pyright: reportUnknownMemberType=false, reportUnknownVariableType=false, reportUnknownArgumentType=false, reportMissingTypeStubs=false
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class SyntheticCase:
     patient_dir: Path
     fluence_path: Path
