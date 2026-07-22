@@ -108,6 +108,15 @@ OpenBragg's **primary seam is the dose engine**: `(image + material map + beam/g
 
 Net for OpenBragg: if the project pivots to **photon** first, openkbp-opt is a strong, self-contained fixture for the **`Dij`-consumer** side of the pipeline (recompute + DVH + gamma + inverse optimization) and a real-world analogue of the Phase-2 optimizer — but it is a photon dataset that supplies a *precomputed* `Dij`, so it does not test the engine seam, and it contributes nothing to the proton pathway.
 
+## Correction (2026-07-22) — the beamlet weight vector `w` is `plan-fluence`, not `plan-weights`
+
+While planning the photon-first pivot I read `provided_code/optimizer.py`, `resources.py`, and `general_functions.py` directly and found this note mislabels which artifact carries the beamlet intensity vector `w` (the `w` in `dose = Dij·w`). The facts-table rows above that gloss `plan-weights` as "(`w`)" are **wrong**. The verified mapping:
+
+- **`plan-fluence/<pred>/<pt>.csv` IS `w`** — `save_fluence_and_dose` builds `w_opt = [w.SolutionValue() for w in self.w.values()]` (the continuous beamlet intensities), writes it to `get_fluence_path()` as a CSV with a `data` column, then writes `dose = patient.dij * w_opt` to `get_dose_path()`. So `plan-dose = Dij · (plan-fluence)` **by construction**.
+- **`plan-weights/<pred>/<pt>.csv` is NOT `w`** — it is the per-*objective* table (`objective_df`), a DataFrame indexed by objective/constraint name with columns for the objective's dual weight and optimized/input objective values. `load_file` even special-cases it (`"/plan-weights/" in file_name`) and reads it with named columns `["Objective","Weight","Optimized objective","Input objective"]`. Irrelevant to dose recompute.
+
+Consequence for a recompute pipeline: load `dij.npz` (base bundle) + `plan-fluence` and `plan-dose` (optional bundle) for one `(model, prediction-set, patient)`; `(dij @ w).reshape(128,128,128)` reproduces `plan-dose` to floating-point precision. Also note openkbp-opt's own scoring is dose-score (MAE over the feasible-dose mask) + DVH-score — **not** gamma. See `docs/superpowers/specs/2026-07-22-photon-first-pivot-design.md` for the full verified on-disk format table.
+
 ## Sources
 
 - Babier et al., "OpenKBP: The open-access knowledge-based planning grand challenge and dataset," *Medical Physics* 48(9), 2021 — https://aapm.onlinelibrary.wiley.com/doi/abs/10.1002/mp.14845

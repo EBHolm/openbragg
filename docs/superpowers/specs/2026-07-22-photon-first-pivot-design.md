@@ -91,10 +91,12 @@ Same module spine as the proton PRD, re-pointed at openkbp-opt. Indicative packa
   `dose` (reference / plan / predicted). Designed so proton spots and a DICOM frame slot in
   later without rework.
 - **Ingest / IO** (`io/`) — an openkbp-opt loader reading `reference-plans/pt_*`
-  (CT, masks, feasible-dose mask, voxel dims, `Dij`) and `paper-plans/<model>/{plan-weights,
-  plan-dose}`. Normalizes the `Dij` into a `scipy.sparse` matrix and aligns dimensions
-  (`Dij` rows = flattened 128³ = 2,097,152 voxels; cols = per-patient beamlet count; `len(w)` =
-  cols; sparse `plan-dose` expanded to the full grid for comparison).
+  (CT, masks, feasible-dose mask, voxel dims, `Dij`) and, from the optional bundle,
+  `paper-plans/<model>/plan-fluence/<pred-set>/<pt>.csv` (the beamlet weight vector `w`) plus
+  the matching `plan-dose/<pred-set>/<pt>.csv` (the recompute target). Normalizes the `Dij` into
+  a `scipy.sparse` matrix and aligns dimensions (`Dij` rows = flattened 128³ = 2,097,152 voxels;
+  cols = per-patient beamlet count = `len(w)`; sparse `plan-dose` expanded to the full grid for
+  comparison).
 - **Dose-engine seam** (`engine/`) — the interface
   `(image, material_map, beam/geometry, spots/beamlets) → (sparse Dij, geometry/units metadata)`,
   defined exactly as the PRD specifies. `OpenKBPOptEngine` implements it by **sourcing** the
@@ -119,9 +121,14 @@ Data flow: `loader → data model → engine.seam(→ Dij) → Dij·w → dose g
 ## Data & fixtures
 
 - The full dataset is ~23 GB (base **10.19 GB** = `reference-plans` + `paper-predictions`;
-  optional **13.08 GB** = `paper-plans` + `results-data` + `results`). **The beamlet weights `w`
-  live only in the optional `paper-plans` bundle** (`plan-weights/`), so the recompute loop
-  requires downloading the optional bundle too.
+  optional **13.08 GB** = `paper-plans` + `results-data` + `results`). **The beamlet weight
+  vector `w` lives only in the optional `paper-plans` bundle**, in `plan-fluence/` — a per-patient
+  CSV whose `data` column is the beamlet-intensity vector (`w_opt` in the optimizer). It is **not**
+  `plan-weights/`, which holds per-*objective* dual weights (a DataFrame indexed by objective
+  name) and is irrelevant to recompute. So the recompute loop requires the optional bundle too.
+  Verified in `provided_code/optimizer.py::save_fluence_and_dose`: `w_opt` is written to the
+  fluence path and `dose = patient.dij * w_opt` is written to the dose path — i.e.
+  `plan-dose = Dij · (plan-fluence)` **by construction**.
 - Nothing large is committed. `.gitignore` already blocks `*.npz`, `data/`, `cases/`, and large
   arrays. Strategy:
   - A **download/fetch script** pulling both bundles into an ignored `data/` directory.
@@ -138,8 +145,11 @@ Stated explicitly because it governs what a green result means:
 
 - The Phase-1 gamma pass-rate here proves the **Dij-consumer machinery is correct** — sparse
   matvec, grid reshaping, DVH, gamma, RTDOSE export, provenance — because
-  `Dij · plan-weights` should reproduce `plan-dose` at ~100% (both use the same `Dij` and the
-  same `w`; it is a cross-implementation check of the identical linear algebra).
+  `Dij · plan-fluence` reproduces `plan-dose` to floating-point precision (openkbp-opt itself
+  computes and saves `dose = dij * w_opt`, so this is a cross-implementation check of the
+  identical linear algebra — expect a near-exact match, not merely a high gamma pass rate).
+  Note openkbp-opt's own metrics are dose-score (MAE over the feasible-dose mask) + DVH-score,
+  **not** gamma; gamma (3%/3mm, 2%/2mm) is OpenBragg's own field-standard addition.
 - It does **not** validate dose **physics** or the engine **seam**, because the `Dij` was
   computed externally (CERR IMRTP) and OpenBragg only re-multiplies it. A near-perfect gamma is
   therefore *expected* and must never be read as "the physics is verified."
@@ -171,15 +181,32 @@ do not overwrite the proton issues. Mapping of the existing proton issues to pho
 | #8 Wrap MCsquare (real physics) | Stays proton-only; deferred (the produce-a-`Dij` seam path) |
 | #9 Analytic Bragg-peak validation | Stays proton-only; deferred (no Bragg peak in photons) |
 
-## Open implementation-time questions (verify, don't guess)
+## On-disk formats (RESOLVED — verified against `provided_code/`)
 
-- **`Dij` on-disk container.** The research note records the `Dij` as a `scipy.sparse` `.npz`;
-  the repo README's folder tree shows `reference-plans/pt_*/*.csv`. Reconcile by reading the
-  repo's `provided_code/general_functions.py` (`load_file`) and `resources.py` before coding —
-  they are the authority for exactly how each per-patient array (including `Dij`) is stored and
-  loaded.
-- **Dimension/units alignment** between `Dij` (2,097,152 × n_beamlets), `w` (n_beamlets), the
-  sparse `plan-dose`, and the feasible-dose mask — confirm on a real patient before wiring gamma.
+Reconciled the research note against the repo source (`general_functions.py::load_file`,
+`resources.py`, `optimizer.py`). The README's `*.csv` tree is illustrative; `load_file`
+dispatches on extension. Per-patient formats:
+
+| Artifact | File | On-disk form | Reconstruct to |
+|---|---|---|---|
+| `Dij` | `reference-plans/pt_*/dij.npz` | `scipy.sparse` (`load_npz` → `coo`, used as `csr`) | sparse (2,097,152 × n_beamlets) |
+| CT | `reference-plans/pt_*/ct.csv` | CSV `{index=raveled voxel idx, "data"=HU}` (nonzero only) | dense 128³ via `np.put` |
+| Reference dose | `reference-plans/pt_*/dose.csv` | CSV `{index=voxel idx, "data"=Gy}` (sparse) | dense 128³ |
+| Structure mask | `reference-plans/pt_*/<ROI>.csv` | CSV of raveled voxel indices where mask==1 (index-only, null "data") | bool 128³ |
+| Feasible-dose mask | `reference-plans/pt_*/possible_dose_mask.csv` | index-only CSV (as above) | bool 128³ |
+| Voxel dims (mm) | `reference-plans/pt_*/voxel_dimensions.csv` | `np.loadtxt` → 3-vector | `(dx,dy,dz)` |
+| Beamlet coords | `reference-plans/pt_*/beamlet_indices.csv` | CSV → df of `(row,col,angle)` per beamlet | `(n_beamlets, 3)` |
+| Weight vector `w` | `paper-plans/<model>/plan-fluence/<set>/<pt>.csv` | CSV `{index=0..n_beamlets-1, "data"=intensity}` | dense `w` (n_beamlets,) |
+| Recompute target | `paper-plans/<model>/plan-dose/<set>/<pt>.csv` | CSV `{index=voxel idx, "data"=Gy}` (sparse) | dense 128³ |
+
+All raveled indices are **C-order over `(128,128,128)`** (numpy default) — the same order `Dij`
+rows use — so `(Dij @ w).reshape(128,128,128)` is directly comparable to the reconstructed
+`plan-dose`. Units are **Gy** throughout.
+
+### Still open (verify at implementation time)
+
+- **Dimension/units alignment** on a real patient — confirm `Dij.shape[1] == len(w)` and that
+  `(Dij @ w)` matches the reconstructed `plan-dose` within fp tolerance before wiring gamma.
 - **RTDOSE frame synthesis** — choose a minimal, self-consistent origin/orientation/spacing so
   the exported RTDOSE is valid and re-loadable, and document that it is synthetic.
 
@@ -193,6 +220,11 @@ do not overwrite the proton issues. Mapping of the existing proton issues to pho
 - Structures: OARs (brainstem, spinal cord, R/L parotid, larynx, esophagus, mandible);
   targets PTV70 / PTV63 / PTV56 (70 Gy in 35 fx).
 - Base bundle 10.19 GB (`reference-plans` + `paper-predictions`) has **no** `w`; the optional
-  13.08 GB bundle (`paper-plans`) holds `plan-weights` (`w`), `plan-dose`, `plan-fluence`,
-  `plan-gap`.
+  13.08 GB bundle (`paper-plans`) holds `plan-fluence` (the beamlet weight vector `w`),
+  `plan-dose`, `plan-weights` (per-objective dual weights — *not* `w`), and `plan-gap`.
+- openkbp-opt scores plans with dose-score (MAE over the feasible-dose mask) + DVH-score, not
+  gamma. DVH metrics used: OARs `D_0.1_cc`, `mean`; targets `D_99`, `D_95`, `D_1`. Clinical
+  criteria (`plan_criteria_dict`): Brainstem/SpinalCord/Mandible `D_0.1_cc` ≤ 50/45/73.5 Gy;
+  RightParotid/LeftParotid/Esophagus/Larynx `mean` ≤ 26/26/45/45 Gy; PTV56/63/70 `D_99` ≥
+  53.2/59.85/66.5 Gy.
 - Licenses: repo MIT; OpenKBP dataset CC BY 4.0.
