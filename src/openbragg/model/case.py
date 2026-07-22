@@ -17,7 +17,7 @@ BoolArray = npt.NDArray[np.bool_]
 GridShape = tuple[int, int, int]
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class ImageGrid:
     """A CT image on a regular 3D grid. ``spacing_mm`` is (dx, dy, dz)."""
 
@@ -30,21 +30,21 @@ class ImageGrid:
         return (int(s[0]), int(s[1]), int(s[2]))
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class StructureSet:
     """Named binary masks aligned to the image grid (name -> bool array)."""
 
     masks: dict[str, BoolArray]
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class Plan:
     """A delivered/optimized plan as its beamlet (or spot) weight vector ``w``."""
 
     weights: FloatArray
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class DoseGrid:
     """A dose distribution on the image grid, in Gy."""
 
@@ -52,7 +52,7 @@ class DoseGrid:
     spacing_mm: tuple[float, float, float]
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class Case:
     """An in-memory patient/plan case.
 
