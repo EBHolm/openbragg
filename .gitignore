@@ -58,6 +58,9 @@ venv.bak/
 *.swp
 *~
 
+# Claude Code local worktrees (embedded git checkouts; never commit)
+.claude/worktrees/
+
 # OS
 .DS_Store
 
